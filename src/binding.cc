@@ -78,6 +78,16 @@ enum ArrayBufferMode {
   AB_PASSED_TO_REF
 };
 
+static int g_nodeVersion = 0;
+
+static size_t ClampLength(size_t length) {
+  if (g_nodeVersion <= 12 || g_nodeVersion >= 17) {
+    return std::min<size_t>(length, kMaxLength);
+  } else {
+    return std::max<size_t>(length, kMaxLength);
+  }
+}
+
 // Since Node.js v14.0.0, we have to keep a global list of all ArrayBuffer
 // instances that we work with, in order not to create any duplicates.
 // Luckily, N-API instance data is available on v14.x and above.
@@ -141,7 +151,7 @@ class InstanceData final : public RefNapi::Instance {
       ab = it->second.ab.Value();
 
     if (ab.IsEmpty()) {
-      length = std::max<size_t>(length, kMaxLength);
+      length = ClampLength(length);
       ab = Buffer<char>::New(env, ptr, length, [this](Env env, char* ptr) {
         UnregisterArrayBuffer(ptr);
       }).ArrayBuffer();
@@ -595,6 +605,10 @@ Value ReinterpretBufferUntilZeros(const CallbackInfo& args) {
 } // anonymous namespace
 
 Object Init(Env env, Object exports) {
+  if (auto v = Napi::VersionManagement::GetNodeVersion(env)) {
+    g_nodeVersion = v->major;
+  }
+
   InstanceData* data = new InstanceData(env);
   {
     Value buffer_ctor = env.Global()["Buffer"];
